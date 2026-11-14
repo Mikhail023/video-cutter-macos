@@ -5,15 +5,34 @@ import SwiftUI
 struct VideoPreview: NSViewRepresentable {
     let player: AVPlayer
 
-    func makeNSView(context: Context) -> AVPlayerView {
-        let view = AVPlayerView()
-        view.controlsStyle = .floating
-        view.videoGravity = .resizeAspect
-        view.player = player
+    func makeNSView(context: Context) -> PlayerCanvas {
+        let view = PlayerCanvas()
+        view.playerLayer.player = player
         return view
     }
 
-    func updateNSView(_ nsView: AVPlayerView, context: Context) {
-        nsView.player = player
+    func updateNSView(_ nsView: PlayerCanvas, context: Context) {
+        nsView.playerLayer.player = player
+    }
+}
+
+final class PlayerCanvas: NSView {
+    override var wantsLayer: Bool {
+        get { true }
+        set { }
+    }
+
+    var playerLayer: AVPlayerLayer {
+        if let layer = layer as? AVPlayerLayer { return layer }
+        let playerLayer = AVPlayerLayer()
+        playerLayer.videoGravity = .resizeAspect
+        layer = playerLayer
+        return playerLayer
+    }
+
+    override func makeBackingLayer() -> CALayer {
+        let playerLayer = AVPlayerLayer()
+        playerLayer.videoGravity = .resizeAspect
+        return playerLayer
     }
 }
