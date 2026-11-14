@@ -3,6 +3,7 @@ import SwiftUI
 
 @main
 struct VideoCutterApp: App {
+    @NSApplicationDelegateAdaptor(WindowController.self) private var windowController
     @State private var store = EditorStore()
 
     var body: some Scene {
@@ -17,6 +18,18 @@ struct VideoCutterApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
+        }
+    }
+}
+
+final class WindowController: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            guard let window = NSApp.windows.first,
+                  !window.styleMask.contains(.fullScreen) else { return }
+
+            window.collectionBehavior.insert(.fullScreenPrimary)
+            window.toggleFullScreen(nil)
         }
     }
 }

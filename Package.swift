@@ -11,7 +11,7 @@ let package = Package(
         .executableTarget(
             name: "VideoCutter",
             path: ".",
-            exclude: [".codex", ".gitignore", "README.md", "script", "tmp"]
+            exclude: [".codex", ".gitignore", "README.md", "dist", "script", "tmp"]
         )
     ]
 )
