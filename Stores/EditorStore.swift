@@ -12,6 +12,7 @@ final class EditorStore {
     var errorMessage: String?
     var thumbnails: [TimelineThumbnail] = []
     var clips: [VideoClip] = []
+    var pendingCutRanges: [CutRange] = []
     var markers: [TimeInterval] = []
     var selectedClipID: UUID?
     var currentTime: TimeInterval = 0
@@ -20,6 +21,7 @@ final class EditorStore {
     var volume: Float = 1
     var exportProgress: Double?
     var exportMessage: String?
+    var isRebuildingComposition = false
 
     private var sourceAsset: AVURLAsset?
     private var timeObserver: Any?
@@ -38,6 +40,7 @@ final class EditorStore {
         thumbnailGeneration = UUID()
         thumbnails = []
         clips = []
+        pendingCutRanges = []
         markers = []
         project = nil
         player?.pause()
@@ -105,6 +108,88 @@ final class EditorStore {
         }
     }
 
+    func addCutRange(start: TimeInterval, end: TimeInterval) {
+        let safeStart = min(max(start, 0), timelineDuration)
+        let safeEnd = min(max(end, 0), timelineDuration)
+        guard safeEnd - safeStart >= 0.1 else {
+            errorMessage = "Укажите интервал длительностью не менее 0,1 секунды."
+            return
+        }
+        pendingCutRanges.append(CutRange(start: safeStart, end: safeEnd))
+        pendingCutRanges.sort { $0.start < $1.start }
+    }
+
+    func updateCutRange(_ id: UUID, start: TimeInterval? = nil, end: TimeInterval? = nil) {
+        guard let index = pendingCutRanges.firstIndex(where: { $0.id == id }) else { return }
+        var range = pendingCutRanges[index]
+        if let start {
+            range.start = min(max(start, 0), range.end - 0.1)
+        }
+        if let end {
+            range.end = max(min(end, timelineDuration), range.start + 0.1)
+        }
+        pendingCutRanges[index] = range
+        pendingCutRanges.sort { $0.start < $1.start }
+    }
+
+    func removeCutRange(_ id: UUID) {
+        pendingCutRanges.removeAll { $0.id == id }
+    }
+
+    func applyPendingCuts() {
+        guard !pendingCutRanges.isEmpty, !isRebuildingComposition else { return }
+        let sortedRanges = pendingCutRanges.sorted { $0.start < $1.start }
+        var result: [VideoClip] = []
+        var clipTimelineStart: TimeInterval = 0
+
+        for clip in clips {
+            let clipTimelineEnd = clipTimelineStart + clip.duration
+            var sourceCursor = clip.sourceStart
+            for cut in sortedRanges where cut.start < clipTimelineEnd && cut.end > clipTimelineStart {
+                let intersectStart = max(cut.start, clipTimelineStart) - clipTimelineStart
+                let intersectEnd = min(cut.end, clipTimelineEnd) - clipTimelineStart
+                let sourceCutStart = clip.sourceStart + intersectStart
+                let sourceCutEnd = clip.sourceStart + intersectEnd
+                if sourceCutStart - sourceCursor >= 0.05 {
+                    result.append(VideoClip(sourceStart: sourceCursor, sourceEnd: sourceCutStart))
+                }
+                sourceCursor = max(sourceCursor, sourceCutEnd)
+            }
+            if clip.sourceEnd - sourceCursor >= 0.05 {
+                result.append(VideoClip(sourceStart: sourceCursor, sourceEnd: clip.sourceEnd))
+            }
+            clipTimelineStart = clipTimelineEnd
+        }
+
+        guard !result.isEmpty else {
+            errorMessage = "Нельзя вырезать всё видео целиком. Оставьте хотя бы один фрагмент."
+            return
+        }
+
+        saveUndo()
+        let oldTime = currentTime
+        currentTime = timelineTimeAfterRemoving(sortedRanges, at: oldTime)
+        markers = markers.map { timelineTimeAfterRemoving(sortedRanges, at: $0) }
+        clips = result
+        pendingCutRanges.removeAll()
+        selectedClipID = clipIndex(at: currentTime).flatMap { clips.indices.contains($0) ? clips[$0].id : nil } ?? clips.first?.id
+        rebuildComposition()
+    }
+
+    private func timelineTimeAfterRemoving(_ ranges: [CutRange], at time: TimeInterval) -> TimeInterval {
+        var removed: TimeInterval = 0
+        for range in ranges {
+            if time >= range.end {
+                removed += range.end - range.start
+            } else if time > range.start {
+                return max(0, range.start - removed)
+            } else {
+                break
+            }
+        }
+        return max(0, time - removed)
+    }
+
     func splitAtPlayhead() {
         guard let index = clipIndex(at: currentTime), clips.indices.contains(index) else { return }
         let clip = clips[index]
@@ -170,6 +255,14 @@ final class EditorStore {
     }
 
     func exportVideo(to url: URL) {
+        guard pendingCutRanges.isEmpty else {
+            errorMessage = "Сначала нажмите «Вырезать интервалы», чтобы применить отмеченные границы."
+            return
+        }
+        guard !isRebuildingComposition else {
+            errorMessage = "Дождитесь завершения обновления таймлайна."
+            return
+        }
         guard let asset = player?.currentItem?.asset ?? sourceAsset else { return }
         Task {
             guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality) else {
@@ -266,14 +359,16 @@ final class EditorStore {
     }
 
     private func rebuildComposition() {
-        guard let sourceAsset else { return }
+        guard let sourceAsset, !isRebuildingComposition else { return }
         let clipsSnapshot = clips
         let playhead = min(currentTime, clipsSnapshot.reduce(0) { $0 + $1.duration })
         let wasPlaying = isPlaying
         player?.pause()
         isPlaying = false
+        isRebuildingComposition = true
 
         Task {
+            defer { isRebuildingComposition = false }
             do {
                 let sourceVideo = try await sourceAsset.loadTracks(withMediaType: .video)
                 let composition = AVMutableComposition()

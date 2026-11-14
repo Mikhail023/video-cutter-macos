@@ -27,3 +27,15 @@ struct TimelineThumbnail: Identifiable {
     let sourceTime: TimeInterval
     let image: NSImage
 }
+
+struct CutRange: Identifiable, Equatable {
+    let id: UUID
+    var start: TimeInterval
+    var end: TimeInterval
+
+    init(id: UUID = UUID(), start: TimeInterval, end: TimeInterval) {
+        self.id = id
+        self.start = start
+        self.end = end
+    }
+}

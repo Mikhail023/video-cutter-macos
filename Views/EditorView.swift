@@ -15,6 +15,7 @@ struct EditorView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             transport
+            CutRangePanel(store: store)
             if let exportMessage = store.exportMessage {
                 HStack {
                     Label(exportMessage, systemImage: "checkmark.circle.fill")
@@ -104,7 +105,10 @@ struct EditorView: View {
             Button(action: exportVideo) {
                 Label("Экспорт", systemImage: "square.and.arrow.up")
             }
-            .help("Сохранить результат в MP4")
+            .disabled(!store.pendingCutRanges.isEmpty || store.isRebuildingComposition)
+            .help(store.pendingCutRanges.isEmpty
+                ? "Сохранить результат в MP4"
+                : "Сначала примените отмеченные интервалы кнопкой «Вырезать интервалы»")
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
