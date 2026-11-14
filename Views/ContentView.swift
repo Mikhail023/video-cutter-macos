@@ -14,6 +14,7 @@ struct ContentView: View {
                 EditorView(store: store)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Color(nsColor: .windowBackgroundColor))
         .fileImporter(
             isPresented: $store.isImporting,

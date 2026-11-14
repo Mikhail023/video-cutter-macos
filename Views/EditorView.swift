@@ -1,4 +1,3 @@
-import AVKit
 import SwiftUI
 
 struct EditorView: View {
@@ -9,7 +8,7 @@ struct EditorView: View {
             ZStack {
                 Color.black
                 if let player = store.player {
-                    VideoPlayer(player: player)
+                    VideoPreview(player: player)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
